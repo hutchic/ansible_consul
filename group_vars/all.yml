@@ -1,2 +1,2 @@
 ---
-ATLAS_TOKEN: "{{ lookup('env', 'QUAY_TOKEN') }}"
+ATLAS_TOKEN: "{{ lookup('env', 'ATLAS_TOKEN') }}"
