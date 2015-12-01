@@ -1,0 +1,29 @@
+- name: update apt
+  apt: >
+    update_cache=yes
+    cache_valid_time=3600
+
+- name: install deps
+  apt: >
+    pkg=dnsmasq
+    state=installed
+
+- name: configure dnsmasq to listen on loopback interface only
+  lineinfile:
+    dest: /etc/dnsmasq.conf
+    regexp: "^#interface="
+    line: "interface=lo"
+
+- name: configure dnsmasq to disable DHCP and TFTP
+  lineinfile:
+    dest: /etc/dnsmasq.conf
+    regexp: "^#no-dhcp-interface="
+    line: "no-dhcp-interface=lo"
+
+- name: configure dnsmasq to delegate all Consul DNS requests to the Consul DNS port
+  copy: >
+    content='server=/{{ consul_domain }}/{{ consul_client_address }}#{{ consul_port_dns }}'
+    dest=/etc/dnsmasq.d/10-consul
+  notify:
+    - restart dnsmasq
+- pause: minutes=1

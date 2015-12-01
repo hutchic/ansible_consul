@@ -1,0 +1,93 @@
+- hosts: localhost
+  connection: local
+  gather_facts: False
+  pre_tasks:
+    - include_vars: host_vars/aws_credentials.yml
+  vars:
+    ansible_python_interpreter: "venv/bin/python"
+
+  tasks:
+    - name: Create the VPC
+      ec2_vpc:
+        cidr_block: 10.200.8.0/21
+        region: 'us-east-1'
+        resource_tags: { "Name":"chutchinson"}
+        state: 'present'
+        internet_gateway: true
+        route_tables:
+          - subnets:
+            - 10.200.9.0/24
+            - 10.200.10.0/24
+            routes:
+              - dest: 0.0.0.0/0
+                gw: igw
+        subnets:
+          - cidr: 10.200.9.0/24
+            az: us-east-1a
+          - cidr: 10.200.10.0/24
+            az: us-east-1c
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+      register: vpc
+
+    - name: Create the security group
+      ec2_group:
+        name: chutchinson
+        description: allow all the things
+        vpc_id: "{{ vpc.vpc_id }}"
+        region: "{{ vpc.vpc.region }}"
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+        rules: #todo fix me
+          - proto: tcp
+            from_port: 0
+            to_port: 65535
+            cidr_ip: 0.0.0.0/0
+      register: ec2_security_group
+
+    - name: Provision consul instances
+      ec2:
+        key_name: insecure
+        instance_type: t2.micro
+        image: "ami-d05e75b8"
+        wait: true
+        assign_public_ip: yes
+        vpc_subnet_id: "{{ vpc.subnets[0].id }}"
+        group_id: "{{ ec2_security_group.group_id }}"
+        exact_count: 3
+        count_tag:
+          Name: consul
+        instance_tags:
+          Name: consul
+        monitoring: yes
+        aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
+        aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
+      register: consul
+
+    - name: Wait for the instances to have ssh available
+      wait_for:
+        port: 22
+        host: "{{ item.public_ip }}"
+      with_items: consul.instances
+
+#    - name: Refresh the local inventory
+#      command: ./inventory/ec2.py --refresh-cache
+
+    - name: Add all instance public IPs to host group
+      add_host: hostname={{ item.public_ip }} groups=tag_Name_consul
+      with_items: consul.instances
+
+- hosts: tag_Name_consul
+  user: ubuntu
+  sudo: yes
+  gather_facts: true
+  vars:
+    consul_is_ui: "true"
+    consul_is_server: "true"
+    consul_bootstrap: "true"
+    consul_bind_address: "{{ ansible_default_ipv4['address'] }}"
+    consul_atlas_infrastructure: "colhutch/example"
+    consul_atlas_token: "{{ ATLAS_TOKEN }}"
+    consul_atlas_join: true
+  roles:
+    - { role: "savagegus.consul" }
