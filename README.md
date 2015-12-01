@@ -1,4 +1,11 @@
 # ansible_consul
+
+prerequisites
+
+- virtualenv
+- aws account
+- hashicorp atlas account
+
 just playing with ansible to setup consul
 
 ```
